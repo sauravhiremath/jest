@@ -225,46 +225,23 @@ export default class TestScheduler {
            * Test runners with event emitters are still not supported
            * for third party test runners.
            */
-          if (testRunner.__PRIVATE_UNSTABLE_API_supportsEventEmitters__) {
-            const unsubscribes = [
-              testRunner.on('test-file-start', ([test]) =>
-                onTestFileStart(test),
-              ),
-              testRunner.on('test-file-success', ([test, testResult]) =>
-                onResult(test, testResult),
-              ),
-              testRunner.on('test-file-failure', ([test, error]) =>
-                onFailure(test, error),
-              ),
-              testRunner.on(
-                'test-case-result',
-                ([testPath, testCaseResult]) => {
-                  const test: Test = {context, path: testPath};
-                  this._dispatcher.onTestCaseResult(test, testCaseResult);
-                },
-              ),
-            ];
+          const unsubscribes = [
+            testRunner.on('test-file-start', ([test]) => onTestFileStart(test)),
+            testRunner.on('test-file-success', ([test, testResult]) =>
+              onResult(test, testResult),
+            ),
+            testRunner.on('test-file-failure', ([test, error]) =>
+              onFailure(test, error),
+            ),
+            testRunner.on('test-case-result', ([testPath, testCaseResult]) => {
+              const test: Test = {context, path: testPath};
+              this._dispatcher.onTestCaseResult(test, testCaseResult);
+            }),
+          ];
 
-            await testRunner.runTests(
-              tests,
-              watcher,
-              undefined,
-              undefined,
-              undefined,
-              testRunnerOptions,
-            );
+          await testRunner.runTests(tests, watcher, testRunnerOptions);
 
-            unsubscribes.forEach(sub => sub());
-          } else {
-            await testRunner.runTests(
-              tests,
-              watcher,
-              onTestFileStart,
-              onResult,
-              onFailure,
-              testRunnerOptions,
-            );
-          }
+          unsubscribes.forEach(sub => sub());
         }
       } catch (error) {
         if (!watcher.isInterrupted()) {

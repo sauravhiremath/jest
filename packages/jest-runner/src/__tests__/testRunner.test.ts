@@ -35,15 +35,14 @@ test('injects the serializable module map into each worker in watch mode', async
     moduleMap: {toJSON: () => serializableModuleMap},
   };
 
-  await new TestRunner(globalConfig).runTests(
+  const testRunner = new TestRunner(globalConfig);
+
+  await testRunner.runTests(
     [
       {context, path: './file.test.js'},
       {context, path: './file2.test.js'},
     ],
     new TestWatcher({isWatchMode: globalConfig.watch}),
-    undefined,
-    undefined,
-    undefined,
     {serial: false},
   );
 
@@ -72,12 +71,11 @@ test('assign process.env.JEST_WORKER_ID = 1 when in runInBand mode', async () =>
   const config = {rootDir: '/path/'};
   const context = {config};
 
-  await new TestRunner(globalConfig).runTests(
+  const testRunner = new TestRunner(globalConfig);
+
+  await testRunner.runTests(
     [{context, path: './file.test.js'}],
     new TestWatcher({isWatchMode: globalConfig.watch}),
-    undefined,
-    undefined,
-    undefined,
     {serial: true},
   );
 

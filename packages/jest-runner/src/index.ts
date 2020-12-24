@@ -16,9 +16,6 @@ import {PromiseWithCustomMessage, Worker} from 'jest-worker';
 import runTest from './runTest';
 import type {SerializableResolver, worker} from './testWorker';
 import type {
-  OnTestFailure,
-  OnTestStart,
-  OnTestSuccess,
   Test,
   TestEvents,
   TestFileEvent,
@@ -57,32 +54,19 @@ export default class TestRunner {
     this._context = context || {};
   }
 
+  on = this.eventEmitter.on.bind(this.eventEmitter);
+
   async runTests(
     tests: Array<Test>,
     watcher: TestWatcher,
-    onStart: OnTestStart | undefined,
-    onResult: OnTestSuccess | undefined,
-    onFailure: OnTestFailure | undefined,
     options: TestRunnerOptions,
   ): Promise<void> {
     return await (options.serial
-      ? this._createInBandTestRun(tests, watcher, onStart, onResult, onFailure)
-      : this._createParallelTestRun(
-          tests,
-          watcher,
-          onStart,
-          onResult,
-          onFailure,
-        ));
+      ? this._createInBandTestRun(tests, watcher)
+      : this._createParallelTestRun(tests, watcher));
   }
 
-  private async _createInBandTestRun(
-    tests: Array<Test>,
-    watcher: TestWatcher,
-    onStart?: OnTestStart,
-    onResult?: OnTestSuccess,
-    onFailure?: OnTestFailure,
-  ) {
+  private async _createInBandTestRun(tests: Array<Test>, watcher: TestWatcher) {
     process.env.JEST_WORKER_ID = '1';
     const mutex = throat(1);
     return tests.reduce(
@@ -93,54 +77,32 @@ export default class TestRunner {
               if (watcher.isInterrupted()) {
                 throw new CancelRun();
               }
-              let sendMessageToJest: TestFileEvent;
 
-              // Remove `if(onStart)` in Jest 27
-              if (onStart) {
-                await onStart(test);
-                return runTest(
-                  test.path,
-                  this._globalConfig,
-                  test.context.config,
-                  test.context.resolver,
-                  this._context,
-                  undefined,
+              // `deepCyclicCopy` used here to avoid mem-leak
+              const sendMessageToJest: TestFileEvent = (eventName, args) =>
+                this.eventEmitter.emit(
+                  eventName,
+                  deepCyclicCopy(args, {keepPrototype: false}),
                 );
-              } else {
-                // `deepCyclicCopy` used here to avoid mem-leak
-                sendMessageToJest = (eventName, args) =>
-                  this.eventEmitter.emit(
-                    eventName,
-                    deepCyclicCopy(args, {keepPrototype: false}),
-                  );
 
-                await this.eventEmitter.emit('test-file-start', [test]);
-                return runTest(
-                  test.path,
-                  this._globalConfig,
-                  test.context.config,
-                  test.context.resolver,
-                  this._context,
-                  sendMessageToJest,
-                );
-              }
+              await this.eventEmitter.emit('test-file-start', [test]);
+              return runTest(
+                test.path,
+                this._globalConfig,
+                test.context.config,
+                test.context.resolver,
+                this._context,
+                sendMessageToJest,
+              );
             })
             .then(result => {
-              if (onResult) {
-                return onResult(test, result);
-              } else {
-                return this.eventEmitter.emit('test-file-success', [
-                  test,
-                  result,
-                ]);
-              }
+              return this.eventEmitter.emit('test-file-success', [
+                test,
+                result,
+              ]);
             })
             .catch(err => {
-              if (onFailure) {
-                return onFailure(test, err);
-              } else {
-                return this.eventEmitter.emit('test-file-failure', [test, err]);
-              }
+              return this.eventEmitter.emit('test-file-failure', [test, err]);
             }),
         ),
       Promise.resolve(),
@@ -150,9 +112,6 @@ export default class TestRunner {
   private async _createParallelTestRun(
     tests: Array<Test>,
     watcher: TestWatcher,
-    onStart?: OnTestStart,
-    onResult?: OnTestSuccess,
-    onFailure?: OnTestFailure,
   ) {
     const resolvers: Map<string, SerializableResolver> = new Map();
     for (const test of tests) {
@@ -189,12 +148,7 @@ export default class TestRunner {
           return Promise.reject();
         }
 
-        // Remove `if(onStart)` in Jest 27
-        if (onStart) {
-          await onStart(test);
-        } else {
-          await this.eventEmitter.emit('test-file-start', [test]);
-        }
+        await this.eventEmitter.emit('test-file-start', [test]);
 
         const promise = worker.worker({
           config: test.context.config,
@@ -222,12 +176,7 @@ export default class TestRunner {
       });
 
     const onError = async (err: SerializableError, test: Test) => {
-      // Remove `if(onFailure)` in Jest 27
-      if (onFailure) {
-        await onFailure(test, err);
-      } else {
-        await this.eventEmitter.emit('test-file-failure', [test, err]);
-      }
+      await this.eventEmitter.emit('test-file-failure', [test, err]);
       if (err.type === 'ProcessTerminatedError') {
         console.error(
           'A worker process has quit unexpectedly! ' +
@@ -249,14 +198,7 @@ export default class TestRunner {
       tests.map(test =>
         runTestInWorker(test)
           .then(result => {
-            if (onResult) {
-              return onResult(test, result);
-            } else {
-              return this.eventEmitter.emit('test-file-success', [
-                test,
-                result,
-              ]);
-            }
+            return this.eventEmitter.emit('test-file-success', [test, result]);
           })
           .catch(error => onError(error, test)),
       ),
@@ -276,8 +218,6 @@ export default class TestRunner {
     };
     return Promise.race([runAllTests, onInterrupt]).then(cleanup, cleanup);
   }
-
-  on = this.eventEmitter.on.bind(this.eventEmitter);
 }
 
 class CancelRun extends Error {
