@@ -416,7 +416,8 @@ export default class TestScheduler {
       try {
         await this._dispatcher.onRunComplete(contexts, aggregatedResults);
       } finally {
-        exit(1);
+        const exitCode = this._globalConfig.testFailureExitCode;
+        exit(exitCode);
       }
     }
   }
