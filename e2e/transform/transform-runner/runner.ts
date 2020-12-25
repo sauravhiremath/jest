@@ -5,34 +5,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import Emittery from 'emittery';
 import throat from 'throat';
 import {TestResult, createEmptyTestResult} from '@jest/test-result';
 import type {Config} from '@jest/types';
-import {
-  OnTestFailure,
-  OnTestStart,
-  OnTestSuccess,
-  Test,
-  TestRunnerContext,
-  TestWatcher,
-} from 'jest-runner';
+import {Test, TestRunnerContext, TestWatcher} from 'jest-runner';
 
 export default class BaseTestRunner {
   private _globalConfig: Config.GlobalConfig;
   private _context: TestRunnerContext;
+  private readonly eventEmitter = new Emittery();
 
   constructor(globalConfig: Config.GlobalConfig, context?: TestRunnerContext) {
     this._globalConfig = globalConfig;
     this._context = context || {};
   }
 
-  async runTests(
-    tests: Array<Test>,
-    watcher: TestWatcher,
-    onStart: OnTestStart,
-    onResult: OnTestSuccess,
-    onFailure: OnTestFailure,
-  ): Promise<void> {
+  on = this.eventEmitter.on.bind(this.eventEmitter);
+
+  async runTests(tests: Array<Test>, watcher: TestWatcher): Promise<void> {
     const mutex = throat(1);
     return tests.reduce(
       (promise, test) =>
@@ -40,7 +31,7 @@ export default class BaseTestRunner {
           promise
             .then(
               async (): Promise<TestResult> => {
-                await onStart(test);
+                await this.eventEmitter.emit('test-file-start', [test]);
                 return {
                   ...createEmptyTestResult(),
                   numPassingTests: 1,
@@ -61,8 +52,12 @@ export default class BaseTestRunner {
                 };
               },
             )
-            .then(result => onResult(test, result))
-            .catch(err => onFailure(test, err)),
+            .then(result =>
+              this.eventEmitter.emit('test-file-success', [test, result]),
+            )
+            .catch(err =>
+              this.eventEmitter.emit('test-file-failure', [test, err]),
+            ),
         ),
       Promise.resolve(),
     );
