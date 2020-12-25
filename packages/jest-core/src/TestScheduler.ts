@@ -82,6 +82,9 @@ export default class TestScheduler {
     const onTestFileStart = this._dispatcher.onTestFileStart.bind(
       this._dispatcher,
     );
+    const onTestCaseResult = this._dispatcher.onTestCaseResult.bind(
+      this._dispatcher,
+    );
     const timings: Array<number> = [];
     const contexts = new Set<Context>();
     tests.forEach(test => {
@@ -235,7 +238,7 @@ export default class TestScheduler {
             ),
             testRunner.on('test-case-result', ([testPath, testCaseResult]) => {
               const test: Test = {context, path: testPath};
-              this._dispatcher.onTestCaseResult(test, testCaseResult);
+              onTestCaseResult(test, testCaseResult);
             }),
           ];
 
